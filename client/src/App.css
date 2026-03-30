@@ -1,0 +1,15 @@
+/* App specific styles that don't conflict with Tailwind */
+.counter {
+  font-weight: 500;
+  padding: 0.5rem 1rem;
+  border-radius: 0.5rem;
+  background-color: rgb(245 245 250);
+  color: rgb(103 80 164);
+  transition-property: background-color, border-color, color, fill, stroke;
+  transition-timing-function: cubic-bezier(0.4, 0, 0.2, 1);
+  transition-duration: 150ms;
+}
+
+.counter:hover {
+  background-color: rgb(243 232 255);
+}
