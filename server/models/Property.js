@@ -35,6 +35,30 @@ const propertySchema = new mongoose.Schema({
     type: mongoose.Schema.Types.ObjectId,
     ref: 'User',
     required: true
+  },
+  fullAddress: {
+    type: String,
+    required: false
+  },
+  ownerName: {
+    type: String,
+    required: false
+  },
+  ownerContact: {
+    type: String,
+    required: false
+  },
+  ownerWhatsApp: {
+    type: String,
+    required: false
+  },
+  ownerEmail: {
+    type: String,
+    required: false
+  },
+  ownerImage: {
+    type: String,
+    required: false
   }
 }, {
   timestamps: true

@@ -7,7 +7,8 @@ const {
   getAllBookings, 
   updateBookingStatus, 
   cancelBooking,
-  updateBooking
+  updateBooking,
+  updatePaymentStatus
 } = require('../controllers/bookingController');
 
 // All routes require authentication
@@ -18,6 +19,7 @@ router.route('/')
 router.get('/my-bookings', protect, getUserBookings);
 router.put('/:id/status', protect, admin, updateBookingStatus);
 router.put('/:id/cancel', protect, cancelBooking);
-router.put('/:id', protect, admin, updateBooking);
+router.put('/:id/payment', protect, admin, updatePaymentStatus);
+router.put('/:id', protect, updateBooking);
 
 module.exports = router;

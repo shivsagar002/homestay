@@ -21,3 +21,67 @@
     @apply transition-all duration-300 hover:shadow-xl hover:-translate-y-1;
   }
 }
+
+/* Responsive Calendar — force DayPicker to fit its container */
+.rdp, .rdp * {
+  box-sizing: border-box !important;
+}
+
+.rdp {
+  --rdp-cell-size: 100% !important;
+  width: 100% !important;
+  margin: 0 !important;
+}
+
+.rdp-months {
+  width: 100% !important;
+}
+
+.rdp-month {
+  width: 100% !important;
+}
+
+.rdp-table {
+  width: 100% !important;
+  max-width: 100% !important;
+  table-layout: fixed !important;
+  border-collapse: collapse !important;
+}
+
+.rdp-head_cell {
+  font-size: 0.7rem !important;
+  font-weight: 700 !important;
+  color: #94a3b8 !important;
+  text-transform: uppercase !important;
+  padding: 4px 0 !important;
+}
+
+.rdp-cell {
+  padding: 1px !important;
+}
+
+.rdp-button {
+  width: 100% !important;
+  height: 34px !important;
+  border-radius: 8px !important;
+  font-size: 0.8rem !important;
+}
+
+/* Day color states */
+.rdp-day {
+  @apply text-emerald-800 bg-emerald-50 hover:bg-emerald-100 transition-all border border-emerald-100 rounded-lg font-semibold !important;
+  width: 100% !important;
+  height: 34px !important;
+}
+
+.rdp-day_selected, .rdp-day_range_start, .rdp-day_range_end {
+  @apply bg-indigo-600 text-white hover:bg-indigo-700 border-indigo-600 shadow-md !important;
+}
+
+.rdp-day_range_middle {
+  @apply bg-indigo-50 text-indigo-700 border-indigo-100 !important;
+}
+
+.rdp-day_disabled {
+  @apply opacity-30 bg-gray-50 text-gray-400 cursor-not-allowed border-gray-100 !important;
+}

@@ -7,7 +7,12 @@ import {
   PlusIcon, PencilIcon, TrashIcon, XMarkIcon, CheckIcon, ArrowRightOnRectangleIcon,
   PhotoIcon, CloudArrowUpIcon, EyeIcon, MagnifyingGlassIcon
 } from '@heroicons/react/24/outline';
-import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer } from 'recharts';
+import { 
+  BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, 
+  PieChart, Pie, Cell, Legend 
+} from 'recharts';
+import { DayPicker } from 'react-day-picker';
+import 'react-day-picker/dist/style.css';
 import useAuthStore from '../stores/authStore';
 import { propertyAPI, bookingAPI, uploadAPI } from '../utils/api';
 
@@ -28,7 +33,8 @@ const AdminDashboard = () => {
   const [editUploadingImage, setEditUploadingImage] = useState(false);
   
   const [newProperty, setNewProperty] = useState({
-    title: '', description: '', images: [], price: '', location: '', amenities: []
+    title: '', description: '', images: [], price: '', location: '', amenities: [],
+    fullAddress: '', ownerName: '', ownerContact: '', ownerWhatsApp: '', ownerEmail: '', ownerImage: ''
   });
   
   const [editingProperty, setEditingProperty] = useState(null);
@@ -45,6 +51,28 @@ const AdminDashboard = () => {
   // Search and filter state for bookings
   const [bookingSearch, setBookingSearch] = useState('');
   const [bookingStatusFilter, setBookingStatusFilter] = useState('');
+
+  // Today's bookings (check-in, check-out, or staying today)
+  const todayBookings = useMemo(() => {
+    const today = new Date();
+    today.setHours(0, 0, 0, 0);
+    const tomorrow = new Date(today);
+    tomorrow.setDate(tomorrow.getDate() + 1);
+
+    return bookings.filter(booking => {
+      const start = new Date(booking.startDate);
+      const end = new Date(booking.endDate);
+      
+      // Check-in today
+      const isCheckInToday = start >= today && start < tomorrow;
+      // Check-out today
+      const isCheckOutToday = end >= today && end < tomorrow;
+      // Staying today (today is between start and end)
+      const isStayingToday = today >= start && today < end;
+
+      return isCheckInToday || isCheckOutToday || isStayingToday;
+    });
+  }, [bookings]);
 
   // Filtered bookings based on search and status filter
   const filteredBookings = useMemo(() => {
@@ -139,6 +167,25 @@ const AdminDashboard = () => {
     }
   };
 
+  // Handle owner image upload
+  const handleOwnerImageUpload = async (e, isEdit = false) => {
+    const file = e.target.files[0];
+    if (!file) return;
+
+    try {
+      const response = await uploadAPI.upload(file);
+      const imageUrl = response.data.url;
+      if (isEdit) {
+        setEditingProperty(prev => ({ ...prev, ownerImage: imageUrl }));
+      } else {
+        setNewProperty(prev => ({ ...prev, ownerImage: imageUrl }));
+      }
+      toast.success('Owner image uploaded');
+    } catch (err) {
+      toast.error('Failed to upload owner image');
+    }
+  };
+
   // Remove image from new property
   const removeImage = (index) => {
     setNewProperty(prev => ({
@@ -220,13 +267,23 @@ const AdminDashboard = () => {
     }
   };
 
-  const handleConfirmBooking = async (id) => {
+  const handleUpdatePayment = async (id, status) => {
     try {
-      await bookingAPI.updateStatus(id, 'Confirmed');
-      toast.success('Booking confirmed');
+      await bookingAPI.updatePayment(id, status);
+      toast.success(`Payment marked as ${status}`);
       fetchData();
     } catch (err) {
-      toast.error('Failed to confirm booking');
+      toast.error('Failed to update payment status');
+    }
+  };
+
+  const handleUpdateStatus = async (id, status) => {
+    try {
+      await bookingAPI.updateStatus(id, status);
+      toast.success(`Status updated to ${status}`);
+      fetchData();
+    } catch (err) {
+      toast.error('Failed to update status');
     }
   };
 
@@ -288,13 +345,57 @@ const AdminDashboard = () => {
     }
   };
 
-  const salesData = [
-    { month: 'Jan', revenue: 4000 }, { month: 'Feb', revenue: 3000 },
-    { month: 'Mar', revenue: 2000 }, { month: 'Apr', revenue: 2780 },
-    { month: 'May', revenue: 1890 }, { month: 'Jun', revenue: 2390 }
-  ];
+  const salesData = useMemo(() => {
+    const months = [];
+    // 4 months ago to 1 month ahead (total 6 months)
+    for (let i = 4; i >= -1; i--) {
+      const d = new Date();
+      d.setDate(1); // Crucial: Start at the 1st to avoid overflow (e.g., Mar 31 - 1 month = Mar 2/3)
+      d.setMonth(d.getMonth() - i);
+      months.push({
+        month: d.toLocaleString('default', { month: 'short' }),
+        revenue: 0,
+        monthNum: d.getMonth(),
+        year: d.getFullYear()
+      });
+    }
 
-  const totalRevenue = bookings.reduce((sum, b) => sum + (b.totalAmount || 0), 0);
+    bookings.filter(b => b.paymentStatus === 'Paid' && b.status !== 'Cancelled').forEach(booking => {
+      const bDate = new Date(booking.startDate); // Use stay-start date for revenue tracking
+      const monthIndex = months.findIndex(m => 
+        m.monthNum === bDate.getMonth() && 
+        m.year === bDate.getFullYear()
+      );
+      if (monthIndex !== -1) {
+        months[monthIndex].revenue += (booking.totalAmount || 0);
+      }
+    });
+
+    return months;
+  }, [bookings]);
+
+  const bookingStats = useMemo(() => {
+    const stats = [
+      { name: 'Pending', value: 0, color: '#f59e0b' },
+      { name: 'Confirmed', value: 0, color: '#4f46e5' },
+      { name: 'CheckedIn', value: 0, color: '#3b82f6' },
+      { name: 'Completed', value: 0, color: '#10b981' },
+      { name: 'Cancelled', value: 0, color: '#ef4444' }
+    ];
+    
+    bookings.forEach(b => {
+      const stat = stats.find(s => s.name === b.status);
+      if (stat) stat.value++;
+    });
+    
+    return stats.filter(s => s.value > 0);
+  }, [bookings]);
+
+  const totalRevenue = useMemo(() => {
+    return bookings
+      .filter(b => b.paymentStatus === 'Paid')
+      .reduce((sum, b) => sum + (b.totalAmount || 0), 0);
+  }, [bookings]);
 
   if (loading) {
     return (
@@ -329,18 +430,27 @@ const AdminDashboard = () => {
         </motion.div>
 
         {/* Stats Cards */}
-        <div className="grid grid-cols-3 gap-3 md:gap-6 mb-6 md:mb-8">
-          <div className="bg-white rounded-lg md:rounded-2xl shadow p-3 md:p-6">
-            <p className="text-xs md:text-sm text-gray-600">Revenue</p>
-            <p className="text-lg md:text-2xl lg:text-3xl font-bold text-gray-900 mt-1">₹{totalRevenue.toLocaleString('en-IN')}</p>
+        <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 md:gap-6 mb-6 md:mb-8">
+          <div className="bg-white rounded-2xl shadow-sm border border-gray-100 p-6 flex flex-col items-center sm:items-start">
+            <div className="p-2 bg-green-50 rounded-lg mb-3">
+              <ChartBarIcon className="h-6 w-6 text-green-600" />
+            </div>
+            <p className="text-xs font-bold text-gray-500 uppercase tracking-wider">Revenue</p>
+            <p className="text-2xl lg:text-3xl font-black text-gray-900 mt-1">₹{totalRevenue.toLocaleString('en-IN')}</p>
           </div>
-          <div className="bg-white rounded-lg md:rounded-2xl shadow p-3 md:p-6">
-            <p className="text-xs md:text-sm text-gray-600">Bookings</p>
-            <p className="text-lg md:text-2xl lg:text-3xl font-bold text-gray-900 mt-1">{bookings.length}</p>
+          <div className="bg-white rounded-2xl shadow-sm border border-gray-100 p-6 flex flex-col items-center sm:items-start">
+            <div className="p-2 bg-blue-50 rounded-lg mb-3">
+              <UserGroupIcon className="h-6 w-6 text-blue-600" />
+            </div>
+            <p className="text-xs font-bold text-gray-500 uppercase tracking-wider">Bookings</p>
+            <p className="text-2xl lg:text-3xl font-black text-gray-900 mt-1">{bookings.length}</p>
           </div>
-          <div className="bg-white rounded-lg md:rounded-2xl shadow p-3 md:p-6">
-            <p className="text-xs md:text-sm text-gray-600">Properties</p>
-            <p className="text-lg md:text-2xl lg:text-3xl font-bold text-gray-900 mt-1">{properties.length}</p>
+          <div className="bg-white rounded-2xl shadow-sm border border-gray-100 p-6 flex flex-col items-center sm:items-start">
+            <div className="p-2 bg-purple-50 rounded-lg mb-3">
+              <HomeIcon className="h-6 w-6 text-purple-600" />
+            </div>
+            <p className="text-xs font-bold text-gray-500 uppercase tracking-wider">Properties</p>
+            <p className="text-2xl lg:text-3xl font-black text-gray-900 mt-1">{properties.length}</p>
           </div>
         </div>
 
@@ -349,6 +459,7 @@ const AdminDashboard = () => {
           <div className="flex border-b overflow-x-auto">
             {[
               { id: 'overview', name: 'Overview', icon: ChartBarIcon },
+              { id: 'today', name: 'Today', icon: CheckIcon },
               { id: 'properties', name: 'Properties', icon: HomeIcon },
               { id: 'bookings', name: 'Bookings', icon: UserGroupIcon }
             ].map((tab) => (
@@ -371,18 +482,68 @@ const AdminDashboard = () => {
             {/* Overview Tab */}
             {activeTab === 'overview' && (
               <div className="space-y-6 md:space-y-8">
-                <div>
-                  <h3 className="text-base md:text-lg font-bold mb-3 md:mb-4">Revenue Overview</h3>
-                  <div className="h-48 md:h-80">
-                    <ResponsiveContainer width="100%" height="100%">
-                      <LineChart data={salesData}>
-                        <CartesianGrid strokeDasharray="3 3" />
-                        <XAxis dataKey="month" tick={{ fontSize: 12 }} />
-                        <YAxis tick={{ fontSize: 12 }} />
-                        <Tooltip />
-                        <Line type="monotone" dataKey="revenue" stroke="#4f46e5" strokeWidth={2} />
-                      </LineChart>
-                    </ResponsiveContainer>
+                <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
+                  <div className="bg-white p-4 md:p-6 rounded-2xl border border-gray-100 shadow-sm">
+                    <h3 className="text-base md:text-lg font-bold mb-6 flex items-center">
+                      <ChartBarIcon className="h-5 w-5 mr-2 text-primary-600" />
+                      Revenue Overview (Last 6 Months)
+                    </h3>
+                    <div className="h-64 md:h-80">
+                      <ResponsiveContainer width="100%" height="100%">
+                        <BarChart data={salesData}>
+                          <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#f3f4f6" />
+                          <XAxis 
+                            dataKey="month" 
+                            axisLine={false} 
+                            tickLine={false} 
+                            tick={{ fontSize: 12, fill: '#6b7280' }} 
+                            dy={10}
+                          />
+                          <YAxis 
+                            axisLine={false} 
+                            tickLine={false} 
+                            tick={{ fontSize: 12, fill: '#6b7280' }}
+                          />
+                          <Tooltip 
+                            cursor={{ fill: '#f8fafc' }}
+                            contentStyle={{ borderRadius: '12px', border: 'none', boxShadow: '0 10px 15px -3px rgb(0 0 0 / 0.1)' }}
+                          />
+                          <Bar 
+                            dataKey="revenue" 
+                            fill="#4f46e5" 
+                            radius={[6, 6, 0, 0]} 
+                            barSize={40}
+                          />
+                        </BarChart>
+                      </ResponsiveContainer>
+                    </div>
+                  </div>
+
+                  <div className="bg-white p-4 md:p-6 rounded-2xl border border-gray-100 shadow-sm">
+                    <h3 className="text-base md:text-lg font-bold mb-6">Booking Status Distribution</h3>
+                    <div className="h-64 md:h-80">
+                      <ResponsiveContainer width="100%" height="100%">
+                        <PieChart>
+                          <Pie
+                            data={bookingStats}
+                            cx="50%"
+                            cy="50%"
+                            innerRadius={60}
+                            outerRadius={80}
+                            paddingAngle={5}
+                            dataKey="value"
+                          >
+                            {bookingStats.map((entry, index) => (
+                              <Cell key={`cell-${index}`} fill={entry.color} />
+                            ))}
+                          </Pie>
+                          <Tooltip 
+                            contentStyle={{ borderRadius: '12px', border: 'none', boxShadow: '0 10px 15px -3px rgb(0 0 0 / 0.1)' }}
+                          />
+                          <Legend verticalAlign="bottom" height={36}/>
+                        </PieChart>
+                      </ResponsiveContainer>
+                    </div>
                   </div>
                 </div>
 
@@ -402,15 +563,13 @@ const AdminDashboard = () => {
                         {bookings.slice(0, 5).map((booking) => (
                           <tr key={booking._id}>
                             <td className="px-3 md:px-6 py-3 md:py-4 text-xs md:text-sm">{booking.propertyId?.title || 'N/A'}</td>
-                            <td className="px-3 md:px-6 py-3 md:py-4 text-xs md:text-sm">{booking.userId?.name || 'N/A'}</td>
+                            <td className="px-3 md:px-6 py-3 md:py-4 text-xs md:text-sm">{booking.userId?.name || booking.guestName || 'N/A'}</td>
                             <td className="px-3 md:px-6 py-3 md:py-4 text-xs md:text-sm hidden sm:table-cell">₹{booking.totalAmount?.toLocaleString('en-IN')}</td>
                             <td className="px-3 md:px-6 py-3 md:py-4">
-                              <span className={`px-2 py-1 text-xs rounded-full ${
-                                booking.status === 'Confirmed' ? 'bg-green-100 text-green-800' :
-                                booking.status === 'Pending' ? 'bg-yellow-100 text-yellow-800' :
-                                'bg-gray-100 text-gray-800'
+                              <span className={`px-2 py-1 text-[10px] md:text-xs rounded-full font-bold ${
+                                booking.paymentStatus === 'Paid' ? 'bg-green-100 text-green-800' : 'bg-red-100 text-red-800'
                               }`}>
-                                {booking.status}
+                                {booking.paymentStatus || 'Unpaid'}
                               </span>
                             </td>
                           </tr>
@@ -418,6 +577,70 @@ const AdminDashboard = () => {
                       </tbody>
                     </table>
                   </div>
+                </div>
+              </div>
+            )}
+
+            {/* Today Tab */}
+            {activeTab === 'today' && (
+              <div>
+                <h3 className="text-base md:text-lg font-bold mb-4">Today's Activity</h3>
+                <div className="overflow-x-auto">
+                  <table className="min-w-full divide-y divide-gray-200">
+                    <thead className="bg-gray-50">
+                      <tr>
+                        <th className="px-3 md:px-6 py-2 md:py-3 text-left text-xs font-medium text-gray-500 uppercase">Type</th>
+                        <th className="px-3 md:px-6 py-2 md:py-3 text-left text-xs font-medium text-gray-500 uppercase">Property</th>
+                        <th className="px-3 md:px-6 py-2 md:py-3 text-left text-xs font-medium text-gray-500 uppercase">Guest</th>
+                        <th className="px-3 md:px-6 py-2 md:py-3 text-left text-xs font-medium text-gray-500 uppercase">Amount</th>
+                        <th className="px-3 md:px-6 py-2 md:py-3 text-left text-xs font-medium text-gray-500 uppercase">Status & Actions</th>
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y divide-gray-200">
+                      {todayBookings.length > 0 ? todayBookings.map((booking) => {
+                        const today = new Date();
+                        today.setHours(0, 0, 0, 0);
+                        const tomorrow = new Date(today);
+                        tomorrow.setDate(tomorrow.getDate() + 1);
+                        
+                        const start = new Date(booking.startDate);
+                        const end = new Date(booking.endDate);
+                        
+                        let type = "Staying";
+                        if (start >= today && start < tomorrow) type = "Check-In";
+                        if (end >= today && end < tomorrow) type = "Check-Out";
+
+                        return (
+                          <tr key={booking._id} className={type === "Check-In" ? "bg-green-50/30" : type === "Check-Out" ? "bg-red-50/30" : ""}>
+                            <td className="px-3 md:px-6 py-3 md:py-4">
+                              <span className={`px-2 py-1 text-[10px] rounded-full font-bold uppercase ${
+                                type === "Check-In" ? "bg-green-100 text-green-700" :
+                                type === "Check-Out" ? "bg-red-100 text-red-700" : "bg-blue-100 text-blue-700"
+                              }`}>{type}</span>
+                            </td>
+                            <td className="px-3 md:px-6 py-3 md:py-4 text-xs md:text-sm font-medium">{booking.propertyId?.title}</td>
+                            <td className="px-3 md:px-6 py-3 md:py-4 text-xs md:text-sm">{booking.guestName || booking.userId?.name}</td>
+                            <td className="px-3 md:px-6 py-3 md:py-4 text-xs md:text-sm">₹{booking.totalAmount?.toLocaleString('en-IN')}</td>
+                            <td className="px-3 md:px-6 py-3 md:py-4">
+                              <div className="flex flex-col gap-1">
+                                <span className={`px-2 py-0.5 text-[10px] w-fit rounded-full font-bold ${
+                                  booking.status === 'Confirmed' ? 'bg-indigo-100 text-indigo-700' :
+                                  booking.status === 'CheckedIn' ? 'bg-blue-100 text-blue-700' :
+                                  booking.status === 'Completed' ? 'bg-green-100 text-green-700' :
+                                  'bg-gray-100 text-gray-700'
+                                }`}>{booking.status}</span>
+                                <button onClick={() => setViewingBooking(booking)} className="text-[10px] w-fit text-primary-600 font-bold hover:underline">View details & actions</button>
+                              </div>
+                            </td>
+                          </tr>
+                        );
+                      }) : (
+                        <tr>
+                          <td colSpan="5" className="px-6 py-10 text-center text-gray-500 italic">No bookings for today</td>
+                        </tr>
+                      )}
+                    </tbody>
+                  </table>
                 </div>
               </div>
             )}
@@ -466,36 +689,44 @@ const AdminDashboard = () => {
 
             {/* Bookings Tab */}
             {activeTab === 'bookings' && (
-              <div>
-                <div className="flex flex-col sm:flex-row sm:justify-between sm:items-center gap-3 mb-4 md:mb-6">
-                  <h3 className="text-base md:text-lg font-bold">All Bookings</h3>
-                  <button onClick={() => setShowNewBooking(true)} className="btn-primary flex items-center text-xs md:text-sm py-2 px-3 md:px-4">
-                    <PlusIcon className="h-4 w-4 mr-1" /> New Booking
+              <div className="space-y-4">
+                <div className="flex flex-col sm:flex-row sm:justify-between sm:items-center gap-4 mb-2">
+                  <div>
+                    <h3 className="text-lg font-bold text-gray-900">All Guest Bookings</h3>
+                    <p className="text-xs text-gray-500">Manage your entire reservation floor from here.</p>
+                  </div>
+                  <button 
+                    onClick={() => setShowNewBooking(true)} 
+                    className="flex items-center justify-center gap-2 bg-indigo-600 hover:bg-indigo-700 text-white px-4 py-2.5 rounded-xl text-sm font-bold shadow-lg shadow-indigo-100 transition-all active:scale-95"
+                  >
+                    <PlusIcon className="h-5 w-5" />
+                    New Booking
                   </button>
                 </div>
 
                 {/* Search and Filter */}
-                <div className="flex flex-col sm:flex-row gap-3 mb-4">
+                <div className="flex flex-col md:flex-row gap-3">
                   <div className="relative flex-1">
-                    <MagnifyingGlassIcon className="absolute left-3 top-1/2 transform -translate-y-1/2 h-4 w-4 text-gray-400" />
+                    <MagnifyingGlassIcon className="absolute left-3 top-1/2 -translate-y-1/2 h-5 w-5 text-gray-400" />
                     <input
                       type="text"
-                      placeholder="Search by name, email, or phone..."
+                      placeholder="Search name, phone, email..."
                       value={bookingSearch}
                       onChange={(e) => setBookingSearch(e.target.value)}
-                      className="w-full pl-10 pr-4 py-2 border border-gray-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-primary-500"
+                      className="w-full pl-10 pr-4 py-3 bg-gray-50 border border-gray-100 rounded-xl text-sm font-medium focus:ring-2 focus:ring-indigo-500 outline-none"
                     />
                   </div>
                   <select
                     value={bookingStatusFilter}
                     onChange={(e) => setBookingStatusFilter(e.target.value)}
-                    className="px-4 py-2 border border-gray-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-primary-500"
+                    className="px-4 py-3 bg-gray-50 border border-gray-100 rounded-xl text-sm font-bold text-gray-700 focus:ring-2 focus:ring-indigo-500 outline-none"
                   >
-                    <option value="">All Status</option>
+                    <option value="">All Statuses</option>
                     <option value="Pending">Pending</option>
                     <option value="Confirmed">Confirmed</option>
-                    <option value="Cancelled">Cancelled</option>
+                    <option value="CheckedIn">Checked In</option>
                     <option value="Completed">Completed</option>
+                    <option value="Cancelled">Cancelled</option>
                   </select>
                 </div>
 
@@ -504,9 +735,9 @@ const AdminDashboard = () => {
                     <thead className="bg-gray-50">
                       <tr>
                         <th className="px-3 md:px-6 py-2 md:py-3 text-left text-xs font-medium text-gray-500 uppercase">Property</th>
-                        <th className="px-3 md:px-6 py-2 md:py-3 text-left text-xs font-medium text-gray-500 uppercase">Guest</th>
+                        <th className="px-3 md:px-6 py-2 md:py-3 text-left text-xs font-medium text-gray-500 uppercase">Guest Name</th>
                         <th className="px-3 md:px-6 py-2 md:py-3 text-left text-xs font-medium text-gray-500 uppercase hidden md:table-cell">Guests</th>
-                        <th className="px-3 md:px-6 py-2 md:py-3 text-left text-xs font-medium text-gray-500 uppercase hidden md:table-cell">Dates</th>
+                        <th className="px-3 md:px-6 py-2 md:py-3 text-left text-xs font-medium text-gray-500 uppercase">Dates</th>
                         <th className="px-3 md:px-6 py-2 md:py-3 text-left text-xs font-medium text-gray-500 uppercase">Amount</th>
                         <th className="px-3 md:px-6 py-2 md:py-3 text-left text-xs font-medium text-gray-500 uppercase">Status</th>
                         <th className="px-3 md:px-6 py-2 md:py-3 text-left text-xs font-medium text-gray-500 uppercase">Actions</th>
@@ -515,42 +746,35 @@ const AdminDashboard = () => {
                     <tbody className="divide-y divide-gray-200">
                       {filteredBookings.map((booking) => (
                         <tr key={booking._id}>
-                          <td className="px-3 md:px-6 py-3 md:py-4 text-xs md:text-sm">{booking.propertyId?.title || 'N/A'}</td>
-                          <td className="px-3 md:px-6 py-3 md:py-4 text-xs md:text-sm">
-                            {booking.guestName || booking.userId?.name || 'N/A'}
-                          </td>
-                          <td className="px-3 md:px-6 py-3 md:py-4 text-xs md:text-sm hidden md:table-cell">
-                            {booking.totalGuests || 1}
-                          </td>
-                          <td className="px-3 md:px-6 py-3 md:py-4 text-xs md:text-sm hidden md:table-cell">
+                          <td className="px-3 md:px-6 py-3 md:py-4 text-xs md:text-sm font-medium">{booking.propertyId?.title}</td>
+                          <td className="px-3 md:px-6 py-3 md:py-4 text-xs md:text-sm">{booking.guestName || booking.userId?.name}</td>
+                          <td className="px-3 md:px-6 py-3 md:py-4 text-xs md:text-sm hidden md:table-cell">{booking.totalGuests}</td>
+                          <td className="px-3 md:px-6 py-3 md:py-4 text-xs md:text-sm font-mono">
                             {new Date(booking.startDate).toLocaleDateString()} - {new Date(booking.endDate).toLocaleDateString()}
                           </td>
                           <td className="px-3 md:px-6 py-3 md:py-4 text-xs md:text-sm">₹{booking.totalAmount?.toLocaleString('en-IN')}</td>
                           <td className="px-3 md:px-6 py-3 md:py-4">
-                            <span className={`px-2 py-1 text-xs rounded-full ${
-                              booking.status === 'Confirmed' ? 'bg-green-100 text-green-800' :
-                              booking.status === 'Pending' ? 'bg-yellow-100 text-yellow-800' :
-                              booking.status === 'Cancelled' ? 'bg-red-100 text-red-800' :
-                              'bg-gray-100 text-gray-800'
-                            }`}>
-                              {booking.status}
-                            </span>
+                            <span className={`px-2 py-1 text-[10px] w-fit rounded-full font-bold uppercase ${
+                              booking.status === 'Confirmed' ? 'bg-indigo-100 text-indigo-700' :
+                              booking.status === 'CheckedIn' ? 'bg-blue-100 text-blue-700' :
+                              booking.status === 'Completed' ? 'bg-green-100 text-green-700' :
+                              booking.status === 'Pending' ? 'bg-yellow-100 text-yellow-700' :
+                              'bg-gray-100 text-gray-700'
+                            }`}>{booking.status}</span>
                           </td>
-                          <td className="px-3 md:px-6 py-3 md:py-4 text-xs md:text-sm">
-                            <button onClick={() => setViewingBooking(booking)} className="text-gray-600 hover:text-gray-900 mr-2" title="View">
-                              <EyeIcon className="h-4 w-4 md:h-5 md:w-5" />
-                            </button>
-                            {booking.status === 'Pending' && (
-                              <button onClick={() => handleConfirmBooking(booking._id)} className="text-green-600 hover:text-green-900 mr-2" title="Confirm">
-                                <CheckIcon className="h-4 w-4 md:h-5 md:w-5" />
-                              </button>
-                            )}
-                            <button onClick={() => setEditingBooking(booking)} className="text-primary-600 hover:text-primary-900 mr-2" title="Edit">
-                              <PencilIcon className="h-4 w-4 md:h-5 md:w-5" />
-                            </button>
-                            <button onClick={() => handleCancelBooking(booking._id)} className="text-red-600 hover:text-red-900" title="Cancel">
-                              <XMarkIcon className="h-4 w-4 md:h-5 md:w-5" />
-                            </button>
+                          <td className="px-3 md:px-6 py-3 md:py-4">
+                              <div className="flex items-center gap-2">
+                                <button onClick={() => setViewingBooking(booking)} className="p-1 hover:bg-gray-100 rounded text-gray-600" title="View">
+                                  <EyeIcon className="h-4 w-4 md:h-5 md:w-5" />
+                                </button>
+                                
+                                <button onClick={() => setEditingBooking(booking)} className="p-1 hover:bg-blue-50 rounded text-primary-600" title="Edit">
+                                  <PencilIcon className="h-4 w-4 md:h-5 md:w-5" />
+                                </button>
+                                <button onClick={() => handleCancelBooking(booking._id)} className="p-1 hover:bg-red-50 rounded text-red-600" title="Cancel">
+                                  <XMarkIcon className="h-4 w-4 md:h-5 md:w-5" />
+                                </button>
+                              </div>
                           </td>
                         </tr>
                       ))}
@@ -574,9 +798,26 @@ const AdminDashboard = () => {
             <form onSubmit={handleAddProperty} className="space-y-3">
               <input type="text" required placeholder="Title" value={newProperty.title} onChange={(e) => setNewProperty({...newProperty, title: e.target.value})} className="w-full px-3 py-2 border rounded-lg text-sm" />
               <textarea required placeholder="Description" rows="2" value={newProperty.description} onChange={(e) => setNewProperty({...newProperty, description: e.target.value})} className="w-full px-3 py-2 border rounded-lg text-sm" />
+              <input type="text" required placeholder="Full Address" value={newProperty.fullAddress} onChange={(e) => setNewProperty({...newProperty, fullAddress: e.target.value})} className="w-full px-3 py-2 border rounded-lg text-sm" />
               <div className="grid grid-cols-2 gap-3">
                 <input type="number" required placeholder="Price per night" value={newProperty.price} onChange={(e) => setNewProperty({...newProperty, price: e.target.value})} className="px-3 py-2 border rounded-lg text-sm" />
-                <input type="text" required placeholder="Location" value={newProperty.location} onChange={(e) => setNewProperty({...newProperty, location: e.target.value})} className="px-3 py-2 border rounded-lg text-sm" />
+                <input type="text" required placeholder="City/Location" value={newProperty.location} onChange={(e) => setNewProperty({...newProperty, location: e.target.value})} className="px-3 py-2 border rounded-lg text-sm" />
+              </div>
+
+              <div className="bg-gray-50 p-4 rounded-xl space-y-3">
+                <h4 className="text-sm font-bold text-gray-700">Owner Information</h4>
+                <div className="grid grid-cols-2 gap-3">
+                  <input type="text" placeholder="Owner Name" value={newProperty.ownerName} onChange={(e) => setNewProperty({...newProperty, ownerName: e.target.value})} className="px-3 py-2 border rounded-lg text-sm" />
+                  <input type="text" placeholder="Owner Contact (Call)" value={newProperty.ownerContact} onChange={(e) => setNewProperty({...newProperty, ownerContact: e.target.value})} className="px-3 py-2 border rounded-lg text-sm" />
+                </div>
+                <div className="grid grid-cols-2 gap-3">
+                   <input type="text" placeholder="Owner WhatsApp" value={newProperty.ownerWhatsApp} onChange={(e) => setNewProperty({...newProperty, ownerWhatsApp: e.target.value})} className="px-3 py-2 border rounded-lg text-sm" />
+                   <input type="email" placeholder="Owner Email" value={newProperty.ownerEmail} onChange={(e) => setNewProperty({...newProperty, ownerEmail: e.target.value})} className="w-full px-3 py-2 border rounded-lg text-sm" />
+                </div>
+                <div className="flex items-center gap-4">
+                  {newProperty.ownerImage && <img src={newProperty.ownerImage} className="w-10 h-10 rounded-full object-cover border" alt="Owner" />}
+                  <input type="file" onChange={(e) => handleOwnerImageUpload(e)} accept="image/*" className="text-xs" />
+                </div>
               </div>
               
               {/* Image Upload Section */}
@@ -668,9 +909,26 @@ const AdminDashboard = () => {
             <form onSubmit={handleEditProperty} className="space-y-3">
               <input type="text" required placeholder="Title" value={editingProperty.title} onChange={(e) => setEditingProperty({...editingProperty, title: e.target.value})} className="w-full px-3 py-2 border rounded-lg text-sm" />
               <textarea required placeholder="Description" rows="2" value={editingProperty.description} onChange={(e) => setEditingProperty({...editingProperty, description: e.target.value})} className="w-full px-3 py-2 border rounded-lg text-sm" />
+              <input type="text" required placeholder="Full Address" value={editingProperty.fullAddress} onChange={(e) => setEditingProperty({...editingProperty, fullAddress: e.target.value})} className="w-full px-3 py-2 border rounded-lg text-sm" />
               <div className="grid grid-cols-2 gap-3">
                 <input type="number" required placeholder="Price per night" value={editingProperty.price} onChange={(e) => setEditingProperty({...editingProperty, price: e.target.value})} className="px-3 py-2 border rounded-lg text-sm" />
-                <input type="text" required placeholder="Location" value={editingProperty.location} onChange={(e) => setEditingProperty({...editingProperty, location: e.target.value})} className="px-3 py-2 border rounded-lg text-sm" />
+                <input type="text" required placeholder="City/Location" value={editingProperty.location} onChange={(e) => setEditingProperty({...editingProperty, location: e.target.value})} className="px-3 py-2 border rounded-lg text-sm" />
+              </div>
+
+              <div className="bg-gray-50 p-4 rounded-xl space-y-3">
+                <h4 className="text-sm font-bold text-gray-700">Owner Information</h4>
+                <div className="grid grid-cols-2 gap-3">
+                  <input type="text" placeholder="Owner Name" value={editingProperty.ownerName} onChange={(e) => setEditingProperty({...editingProperty, ownerName: e.target.value})} className="px-3 py-2 border rounded-lg text-sm" />
+                  <input type="text" placeholder="Owner Contact (Call)" value={editingProperty.ownerContact} onChange={(e) => setEditingProperty({...editingProperty, ownerContact: e.target.value})} className="px-3 py-2 border rounded-lg text-sm" />
+                </div>
+                <div className="grid grid-cols-2 gap-3">
+                  <input type="text" placeholder="Owner WhatsApp" value={editingProperty.ownerWhatsApp} onChange={(e) => setEditingProperty({...editingProperty, ownerWhatsApp: e.target.value})} className="px-3 py-2 border rounded-lg text-sm" />
+                  <input type="email" placeholder="Owner Email" value={editingProperty.ownerEmail} onChange={(e) => setEditingProperty({...editingProperty, ownerEmail: e.target.value})} className="w-full px-3 py-2 border rounded-lg text-sm" />
+                </div>
+                <div className="flex items-center gap-4">
+                  {editingProperty.ownerImage && <img src={editingProperty.ownerImage} className="w-10 h-10 rounded-full object-cover border" alt="Owner" />}
+                  <input type="file" onChange={(e) => handleOwnerImageUpload(e, true)} accept="image/*" className="text-xs" />
+                </div>
               </div>
               
               {/* Image Upload Section */}
@@ -767,14 +1025,69 @@ const AdminDashboard = () => {
               <input type="email" required placeholder="Guest Email" value={newBooking.guestEmail} onChange={(e) => setNewBooking({...newBooking, guestEmail: e.target.value})} className="w-full px-3 py-2 border rounded-lg text-sm" />
               <input type="tel" placeholder="Guest Phone (optional)" value={newBooking.guestPhone} onChange={(e) => setNewBooking({...newBooking, guestPhone: e.target.value})} className="w-full px-3 py-2 border rounded-lg text-sm" />
               <input type="number" min="1" placeholder="Total Guests" value={newBooking.totalGuests} onChange={(e) => setNewBooking({...newBooking, totalGuests: e.target.value})} className="w-full px-3 py-2 border rounded-lg text-sm" />
-              <div className="grid grid-cols-2 gap-3">
-                <div>
-                  <label className="block text-xs text-gray-600 mb-1">Check-in</label>
-                  <input type="date" required value={newBooking.startDate} onChange={(e) => setNewBooking({...newBooking, startDate: e.target.value})} className="w-full px-3 py-2 border rounded-lg text-sm" />
+              <div className="bg-gray-50 p-4 rounded-xl">
+                <label className="block text-sm font-bold text-gray-700 mb-4 text-center">Select Stay Dates (Green: Available, Red: Booked)</label>
+                <div className="flex justify-center bg-white p-4 rounded-2xl border border-gray-100 shadow-sm overflow-hidden overflow-x-auto">
+                  <DayPicker
+                    mode="range"
+                    selected={{ 
+                      from: newBooking.startDate ? new Date(newBooking.startDate + 'T00:00:00') : undefined, 
+                      to: newBooking.endDate ? new Date(newBooking.endDate + 'T00:00:00') : undefined 
+                    }}
+                    onSelect={(range) => {
+                      const formatDateLocal = (date) => {
+                        if (!date) return '';
+                        const year = date.getFullYear();
+                        const month = String(date.getMonth() + 1).padStart(2, '0');
+                        const day = String(date.getDate()).padStart(2, '0');
+                        return `${year}-${month}-${day}`;
+                      };
+                      // Block selection of booked dates
+                      const selectedPropCheck = properties.find(p => p._id === newBooking.propertyId);
+                      const isBooked = (d) => selectedPropCheck?.bookedDates?.some(bd => new Date(bd).toDateString() === d?.toDateString());
+                      if (isBooked(range?.from) || isBooked(range?.to)) return;
+                      setNewBooking({
+                        ...newBooking,
+                        startDate: formatDateLocal(range?.from),
+                        endDate: formatDateLocal(range?.to)
+                      });
+                    }}
+                    disabled={(date) => {
+                      const today = new Date();
+                      today.setHours(0,0,0,0);
+                      return date < today; // Only disable past dates, NOT booked dates
+                    }}
+                    modifiers={{ 
+                      booked: (date) => {
+                        const selectedProp = properties.find(p => p._id === newBooking.propertyId);
+                        if (!selectedProp) return false;
+                        return selectedProp.bookedDates?.some(d => new Date(d).toDateString() === date.toDateString());
+                      }
+                    }}
+                    modifiersStyles={{
+                      booked: {
+                        backgroundColor: '#fff1f2',
+                        color: '#f43f5e',
+                        textDecoration: 'line-through',
+                        textDecorationThickness: '2px',
+                        opacity: 1,
+                        cursor: 'not-allowed',
+                        fontWeight: 'bold',
+                        border: '1px solid #fecdd3'
+                      }
+                    }}
+                    className="mx-auto"
+                  />
                 </div>
-                <div>
-                  <label className="block text-xs text-gray-600 mb-1">Check-out</label>
-                  <input type="date" required value={newBooking.endDate} onChange={(e) => setNewBooking({...newBooking, endDate: e.target.value})} className="w-full px-3 py-2 border rounded-lg text-sm" />
+                <div className="mt-4 grid grid-cols-2 gap-4 text-center">
+                  <div className="bg-white p-2 rounded-lg border">
+                    <p className="text-[10px] text-gray-400 font-bold uppercase">Check-In</p>
+                    <p className="text-xs font-black">{newBooking.startDate || '---'}</p>
+                  </div>
+                  <div className="bg-white p-2 rounded-lg border">
+                    <p className="text-[10px] text-gray-400 font-bold uppercase">Check-Out</p>
+                    <p className="text-xs font-black">{newBooking.endDate || '---'}</p>
+                  </div>
                 </div>
               </div>
               <div className="flex justify-end gap-2 pt-2">
@@ -794,68 +1107,89 @@ const AdminDashboard = () => {
               <h3 className="text-lg font-bold">Booking Details</h3>
               <button onClick={() => setViewingBooking(null)}><XMarkIcon className="h-6 w-6" /></button>
             </div>
+            
             <div className="space-y-4">
-              <div className="bg-gray-50 rounded-lg p-4">
-                <h4 className="font-medium text-sm text-gray-500 mb-2">Property</h4>
-                <p className="font-semibold">{viewingBooking.propertyId?.title || 'N/A'}</p>
-                <p className="text-sm text-gray-600">{viewingBooking.propertyId?.location || ''}</p>
-              </div>
-              
               <div className="grid grid-cols-2 gap-4">
                 <div className="bg-gray-50 rounded-lg p-4">
-                  <h4 className="font-medium text-sm text-gray-500 mb-2">Guest Name</h4>
-                  <p className="font-semibold">{viewingBooking.guestName || viewingBooking.userId?.name || 'N/A'}</p>
+                  <h4 className="font-medium text-xs text-gray-500 mb-1 uppercase tracking-wider">Property</h4>
+                  <p className="font-bold text-gray-900">{viewingBooking.propertyId?.title || 'N/A'}</p>
                 </div>
                 <div className="bg-gray-50 rounded-lg p-4">
-                  <h4 className="font-medium text-sm text-gray-500 mb-2">Total Guests</h4>
-                  <p className="font-semibold">{viewingBooking.totalGuests || 1}</p>
+                  <h4 className="font-medium text-xs text-gray-500 mb-1 uppercase tracking-wider">Guest Name</h4>
+                  <p className="font-bold text-gray-900">{viewingBooking.userId?.name || viewingBooking.guestName || 'N/A'}</p>
                 </div>
               </div>
 
-              <div className="grid grid-cols-2 gap-4">
-                <div className="bg-gray-50 rounded-lg p-4">
-                  <h4 className="font-medium text-sm text-gray-500 mb-2">Email</h4>
-                  <p className="font-semibold text-sm">{viewingBooking.guestEmail || viewingBooking.userId?.email || 'N/A'}</p>
+              <div className="bg-white border border-gray-100 rounded-xl p-4 shadow-sm space-y-3">
+                <div className="flex justify-between items-center pb-2 border-b border-gray-50">
+                   <h4 className="font-bold text-sm text-gray-700">Booking Status</h4>
+                    <span className={`px-3 py-1 rounded-full text-xs font-black uppercase ${
+                      viewingBooking.status === 'Confirmed' ? 'bg-green-100 text-green-800' :
+                      viewingBooking.status === 'Pending' ? 'bg-yellow-100 text-yellow-800' :
+                      viewingBooking.status === 'CheckedIn' ? 'bg-blue-100 text-blue-800' :
+                      viewingBooking.status === 'Completed' ? 'bg-gray-100 text-gray-800' :
+                      'bg-red-100 text-red-800'
+                    }`}>{viewingBooking.status}</span>
                 </div>
-                <div className="bg-gray-50 rounded-lg p-4">
-                  <h4 className="font-medium text-sm text-gray-500 mb-2">Phone</h4>
-                  <p className="font-semibold">{viewingBooking.guestPhone || 'N/A'}</p>
-                </div>
-              </div>
-
-              <div className="grid grid-cols-2 gap-4">
-                <div className="bg-gray-50 rounded-lg p-4">
-                  <h4 className="font-medium text-sm text-gray-500 mb-2">Check-in</h4>
-                  <p className="font-semibold">{new Date(viewingBooking.startDate).toLocaleDateString()}</p>
-                </div>
-                <div className="bg-gray-50 rounded-lg p-4">
-                  <h4 className="font-medium text-sm text-gray-500 mb-2">Check-out</h4>
-                  <p className="font-semibold">{new Date(viewingBooking.endDate).toLocaleDateString()}</p>
-                </div>
-              </div>
-
-              <div className="grid grid-cols-2 gap-4">
-                <div className="bg-gray-50 rounded-lg p-4">
-                  <h4 className="font-medium text-sm text-gray-500 mb-2">Total Amount</h4>
-                  <p className="font-semibold text-primary-600">₹{viewingBooking.totalAmount?.toLocaleString('en-IN')}</p>
-                </div>
-                <div className="bg-gray-50 rounded-lg p-4">
-                  <h4 className="font-medium text-sm text-gray-500 mb-2">Status</h4>
-                  <span className={`px-3 py-1 text-sm rounded-full font-medium ${
-                    viewingBooking.status === 'Confirmed' ? 'bg-green-100 text-green-800' :
-                    viewingBooking.status === 'Pending' ? 'bg-yellow-100 text-yellow-800' :
-                    viewingBooking.status === 'Cancelled' ? 'bg-red-100 text-red-800' :
-                    'bg-gray-100 text-gray-800'
-                  }`}>
-                    {viewingBooking.status}
-                  </span>
+                
+                <div className="grid grid-cols-3 gap-2">
+                  {viewingBooking.status === 'Pending' && (
+                    <button onClick={() => { handleUpdateStatus(viewingBooking._id, 'Confirmed'); setViewingBooking(null); }} className="px-3 py-2 bg-green-600 text-white text-[10px] font-bold rounded-lg uppercase tracking-tight shadow-sm hover:bg-green-700 transition-all">Confirm</button>
+                  )}
+                  {viewingBooking.status === 'Confirmed' && (
+                    <button onClick={() => { handleUpdateStatus(viewingBooking._id, 'CheckedIn'); setViewingBooking(null); }} className="px-3 py-2 bg-indigo-600 text-white text-[10px] font-bold rounded-lg uppercase tracking-tight shadow-sm hover:bg-indigo-700 transition-all">Check In</button>
+                  )}
+                  {viewingBooking.status === 'CheckedIn' && (
+                    <button onClick={() => { handleUpdateStatus(viewingBooking._id, 'Completed'); setViewingBooking(null); }} className="px-3 py-2 bg-emerald-600 text-white text-[10px] font-bold rounded-lg uppercase tracking-tight shadow-sm hover:bg-emerald-700 transition-all">Check Out</button>
+                  )}
+                  {viewingBooking.status !== 'Cancelled' && viewingBooking.status !== 'Completed' && (
+                    <button onClick={() => { handleCancelBooking(viewingBooking._id); setViewingBooking(null); }} className="px-3 py-2 bg-red-50 text-red-600 text-[10px] font-bold rounded-lg uppercase tracking-tight border border-red-100 hover:bg-red-100 transition-all">Cancel</button>
+                  )}
                 </div>
               </div>
 
-              <div className="bg-gray-50 rounded-lg p-4">
-                <h4 className="font-medium text-sm text-gray-500 mb-2">Booked By</h4>
-                <p className="font-semibold">{viewingBooking.bookedBy || 'User'}</p>
-                <p className="text-xs text-gray-500 mt-1">Created: {new Date(viewingBooking.createdAt).toLocaleString()}</p>
+              <div className="bg-white border border-gray-100 rounded-xl p-4 shadow-sm space-y-3">
+                <div className="flex justify-between items-center pb-2 border-b border-gray-50">
+                   <h4 className="font-bold text-sm text-gray-700">Payment History</h4>
+                    <span className={`px-3 py-1 rounded-full text-xs font-black uppercase ${
+                      viewingBooking.paymentStatus === 'Paid' ? 'bg-green-100 text-green-800' : 'bg-red-100 text-red-800'
+                    }`}>{viewingBooking.paymentStatus || 'Unpaid'}</span>
+                </div>
+                <div className="flex gap-2">
+                  <button 
+                    onClick={() => { handleUpdatePayment(viewingBooking._id, viewingBooking.paymentStatus === 'Paid' ? 'Unpaid' : 'Paid'); setViewingBooking(null); }} 
+                    className="flex-1 px-4 py-2 border border-gray-300 rounded-lg text-xs font-bold hover:bg-gray-50 transition-all"
+                  >
+                    Mark as {viewingBooking.paymentStatus === 'Paid' ? 'Unpaid' : 'Paid'}
+                  </button>
+                </div>
+                {viewingBooking.paidAt && (
+                   <p className="text-[10px] text-gray-400 italic">Paid on: {new Date(viewingBooking.paidAt).toLocaleString()}</p>
+                )}
+              </div>
+
+              <div className="grid grid-cols-2 gap-4">
+                <div className="space-y-4">
+                  <div className="bg-gray-50 p-3 rounded-lg">
+                    <h5 className="text-[10px] font-bold text-gray-400 uppercase mb-1">Check-In</h5>
+                    <p className="text-xs font-bold text-gray-700">{new Date(viewingBooking.startDate).toLocaleDateString()}</p>
+                    {viewingBooking.checkedInAt && (
+                      <p className="text-[9px] text-green-600 mt-1">Arrival: {new Date(viewingBooking.checkedInAt).toLocaleString()}</p>
+                    )}
+                  </div>
+                  <div className="bg-gray-50 p-3 rounded-lg">
+                    <h5 className="text-[10px] font-bold text-gray-400 uppercase mb-1">Check-Out</h5>
+                    <p className="text-xs font-bold text-gray-700">{new Date(viewingBooking.endDate).toLocaleDateString()}</p>
+                    {viewingBooking.completedAt && (
+                      <p className="text-[9px] text-red-600 mt-1">Departure: {new Date(viewingBooking.completedAt).toLocaleString()}</p>
+                    )}
+                  </div>
+                </div>
+                <div className="bg-gray-50 p-3 rounded-lg flex flex-col justify-center items-center text-center">
+                  <h5 className="text-[10px] font-bold text-gray-400 uppercase mb-1">Total Amount</h5>
+                  <p className="text-2xl font-black text-gray-900">₹{viewingBooking.totalAmount?.toLocaleString('en-IN')}</p>
+                  <p className="text-[10px] text-gray-500 mt-1">{viewingBooking.totalGuests} Guests</p>
+                </div>
               </div>
             </div>
             

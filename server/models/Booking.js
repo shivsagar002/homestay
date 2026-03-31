@@ -32,8 +32,13 @@ const bookingSchema = new mongoose.Schema({
   },
   status: {
     type: String,
-    enum: ['Pending', 'Confirmed', 'Cancelled', 'Completed'],
+    enum: ['Pending', 'Confirmed', 'CheckedIn', 'Completed', 'Cancelled'],
     default: 'Pending'
+  },
+  paymentStatus: {
+    type: String,
+    enum: ['Paid', 'Unpaid'],
+    default: 'Unpaid'
   },
   // Guest details for admin-created bookings
   guestName: {
@@ -52,6 +57,18 @@ const bookingSchema = new mongoose.Schema({
     type: String,
     enum: ['User', 'Admin'],
     default: 'User'
+  },
+  checkedInAt: {
+    type: Date,
+    required: false
+  },
+  completedAt: {
+    type: Date,
+    required: false
+  },
+  paidAt: {
+    type: Date,
+    required: false
   }
 }, {
   timestamps: true

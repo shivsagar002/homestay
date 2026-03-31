@@ -49,11 +49,18 @@ const Navbar = () => {
           {/* Desktop Navigation */}
           <div className="hidden md:flex items-center space-x-4">
             {isAuthenticated ? (
-              <div className="flex items-center space-x-4">
-                <span className="text-gray-700 text-sm">Welcome, {user?.name?.split(' ')[0]}</span>
+              <div className="flex items-center space-x-6">
+                <Link 
+                  to="/my-bookings" 
+                  className="text-gray-600 hover:text-primary-600 font-medium transition-colors text-sm"
+                >
+                  My Bookings
+                </Link>
+                <div className="h-4 w-px bg-gray-200"></div>
+                <span className="text-gray-700 text-sm font-medium">Welcome, {user?.name?.split(' ')[0]}</span>
                 <button
                   onClick={handleLogout}
-                  className="flex items-center space-x-1 text-gray-600 hover:text-gray-900 transition-colors text-sm"
+                  className="flex items-center space-x-1 text-gray-500 hover:text-rose-600 transition-colors text-sm font-medium"
                 >
                   <ArrowRightOnRectangleIcon className="h-5 w-5" />
                   <span>Logout</span>
@@ -103,12 +110,19 @@ const Navbar = () => {
           <div className="px-4 py-4 space-y-3">
             {isAuthenticated ? (
               <>
-                <div className="text-gray-700 text-sm py-2 border-b border-gray-100">
+                <div className="text-gray-900 font-bold text-sm py-2 border-b border-gray-100 mb-2">
                   Welcome, {user?.name}
                 </div>
+                <Link
+                  to="/my-bookings"
+                  onClick={() => setMobileMenuOpen(false)}
+                  className="block text-gray-600 hover:text-primary-600 font-medium py-2 text-sm"
+                >
+                  My Bookings
+                </Link>
                 <button
                   onClick={handleLogout}
-                  className="flex items-center space-x-2 text-gray-600 hover:text-gray-900 w-full py-2 text-sm"
+                  className="flex items-center space-x-2 text-gray-500 hover:text-rose-600 w-full py-2 text-sm font-medium"
                 >
                   <ArrowRightOnRectangleIcon className="h-5 w-5" />
                   <span>Logout</span>

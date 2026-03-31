@@ -9,9 +9,11 @@ const createBooking = async (req, res) => {
   try {
     const { propertyId, startDate, endDate, guestName, guestEmail, guestPhone, totalGuests } = req.body;
     
-    // Validate dates
+    // Validate dates and set standard times (11 AM Check-in, 10 AM Check-out)
     const start = new Date(startDate);
+    start.setHours(11, 0, 0, 0);
     const end = new Date(endDate);
+    end.setHours(10, 0, 0, 0);
     
     if (start >= end) {
       return res.status(400).json({ message: 'End date must be after start date' });
@@ -23,33 +25,37 @@ const createBooking = async (req, res) => {
       return res.status(404).json({ message: 'Property not found' });
     }
     
-    // Check if dates are available
-    const bookedDates = property.bookedDates.map(date => new Date(date).toISOString().split('T')[0]);
-    const requestedDates = [];
-    
-    const tempStart = new Date(start);
-    while (tempStart < end) {
-      requestedDates.push(tempStart.toISOString().split('T')[0]);
-      tempStart.setDate(tempStart.getDate() + 1);
-    }
-    
-    const isBooked = requestedDates.some(date => bookedDates.includes(date));
-    if (isBooked) {
-      return res.status(400).json({ message: 'Selected dates are not available' });
+    // Check for overlapping bookings (Conflict if: NewStart < ExistEnd AND NewEnd > ExistStart)
+    const conflictingBooking = await Booking.findOne({
+      propertyId,
+      status: { $nin: ['Cancelled', 'Pending'] }, // Only check against confirmed/active bookings
+      $and: [
+        { startDate: { $lt: end } },
+        { endDate: { $gt: start } }
+      ]
+    });
+
+    if (conflictingBooking) {
+      return res.status(400).json({ message: 'Selected dates are already booked. Please try different dates.' });
     }
     
     // Calculate total amount
     const nights = Math.ceil((end - start) / (1000 * 60 * 60 * 24));
-    const totalAmount = nights * property.price;
+    const totalAmount = (nights > 0 ? nights : 1) * property.price;
     
     // Check if admin is booking for a guest
     const isAdminBooking = req.user.role === 'Admin' && guestName && guestEmail;
     
-    // Get user info for user bookings
-    let userPhone = null;
+    // Get user info for bookings
+    let finalGuestName = guestName;
+    let finalGuestEmail = guestEmail;
+    let finalGuestPhone = guestPhone;
+
     if (!isAdminBooking && req.user._id) {
       const user = await User.findById(req.user._id);
-      userPhone = user?.phone || guestPhone;
+      finalGuestName = guestName || user?.name;
+      finalGuestEmail = guestEmail || user?.email;
+      finalGuestPhone = guestPhone || user?.phone;
     }
     
     // Create booking - User bookings are always Pending, Admin bookings are Confirmed
@@ -61,19 +67,24 @@ const createBooking = async (req, res) => {
       totalAmount,
       totalGuests: totalGuests || 1,
       status: isAdminBooking ? 'Confirmed' : 'Pending',
-      guestName: isAdminBooking ? guestName : undefined,
-      guestEmail: isAdminBooking ? guestEmail : undefined,
-      guestPhone: isAdminBooking ? guestPhone : userPhone,
+      guestName: finalGuestName,
+      guestEmail: finalGuestEmail,
+      guestPhone: finalGuestPhone,
       bookedBy: isAdminBooking ? 'Admin' : 'User'
     });
     
     const createdBooking = await booking.save();
     
-    // Add booked dates to property only for confirmed/admin bookings
-    if (isAdminBooking) {
-      property.bookedDates.push(...requestedDates.map(date => new Date(date)));
-      await property.save();
+    // Add booked dates to property for all bookings (Pending or Confirmed)
+    // This ensures they show as "crossed out" on the calendar immediately
+    const requestedDates = [];
+    let tempDate = new Date(start);
+    while (tempDate < end) {
+      requestedDates.push(new Date(tempDate));
+      tempDate.setDate(tempDate.getDate() + 1);
     }
+    property.bookedDates.push(...requestedDates);
+    await property.save();
     
     res.status(201).json(createdBooking);
   } catch (error) {
@@ -146,6 +157,14 @@ const updateBookingStatus = async (req, res) => {
     }
     
     booking.status = status;
+    
+    // Set operational timestamps
+    if (status === 'CheckedIn') {
+      booking.checkedInAt = new Date();
+    } else if (status === 'Completed') {
+      booking.completedAt = new Date();
+    }
+
     const updatedBooking = await booking.save();
     
     res.json(updatedBooking);
@@ -206,9 +225,9 @@ const cancelBooking = async (req, res) => {
   }
 };
 
-// @desc    Update booking (admin - full edit)
+// @desc    Update booking (User modify or Admin full edit)
 // @route   PUT /api/bookings/:id
-// @access  Private/Admin
+// @access  Private
 const updateBooking = async (req, res) => {
   try {
     const { guestName, guestEmail, guestPhone, totalGuests, startDate, endDate, status, propertyId } = req.body;
@@ -218,85 +237,155 @@ const updateBooking = async (req, res) => {
       return res.status(404).json({ message: 'Booking not found' });
     }
 
-    // Get old property if propertyId is changing
+    // Authorization check: User must own booking OR be admin
+    const isAdmin = req.user.role === 'Admin';
+    const isOwner = booking.userId && booking.userId.toString() === req.user._id.toString();
+
+    if (!isAdmin && !isOwner) {
+      return res.status(403).json({ message: 'Not authorized to modify this booking' });
+    }
+
+    // Check if modification is allowed (24 hours before start date) for users
+    if (!isAdmin) {
+      const today = new Date();
+      const hoursUntilStart = (booking.startDate - today) / (1000 * 60 * 60);
+      
+      // If user modifies, status ALWAYS resets to Pending for admin verification
+      // We must check if we need to remove old dates (handled in property/date logic)
+      if (booking.status !== 'Cancelled') {
+        const property = await Property.findById(booking.propertyId);
+        if (property) {
+          const start = new Date(booking.startDate);
+          const end = new Date(booking.endDate);
+          const datesToRemove = [];
+          let tempDate = new Date(start);
+          while (tempDate < end) {
+            datesToRemove.push(tempDate.toISOString().split('T')[0]);
+            tempDate.setDate(tempDate.getDate() + 1);
+          }
+          property.bookedDates = property.bookedDates.filter(date =>
+            !datesToRemove.includes(new Date(date).toISOString().split('T')[0])
+          );
+          await property.save();
+        }
+      }
+      booking.status = 'Pending';
+    } else if (status !== undefined) {
+      // Admins can set status directly
+      booking.status = status;
+    }
+
+    // Get old/new property info
     const oldPropertyId = booking.propertyId;
     const newPropertyId = propertyId || oldPropertyId;
+    const isPropertyChanging = oldPropertyId.toString() !== newPropertyId.toString();
+    const isDateChanging = (startDate && new Date(startDate).getTime() !== new Date(booking.startDate).getTime()) || 
+                          (endDate && new Date(endDate).getTime() !== new Date(booking.endDate).getTime());
 
-    // Handle date changes - remove old dates from old property
-    if (startDate && endDate) {
-      const start = new Date(startDate);
-      const end = new Date(endDate);
+    // Handle property or date changes
+    if (isPropertyChanging || isDateChanging) {
+      const start = new Date(startDate || booking.startDate);
+      start.setHours(11, 0, 0, 0);
+      const end = new Date(endDate || booking.endDate);
+      end.setHours(10, 0, 0, 0);
       
       if (start >= end) {
         return res.status(400).json({ message: 'End date must be after start date' });
       }
 
-      // Remove old dates from old property
-      const oldProperty = await Property.findById(oldPropertyId);
-      if (oldProperty) {
-        const oldStart = new Date(booking.startDate);
-        const oldEnd = new Date(booking.endDate);
-        const oldDatesToRemove = [];
-        
-        const tempStart = new Date(oldStart);
-        while (tempStart < oldEnd) {
-          oldDatesToRemove.push(tempStart.toISOString().split('T')[0]);
-          tempStart.setDate(tempStart.getDate() + 1);
+      // 1. Check availability on new property (Collision if: NewStart < ExistEnd AND NewEnd > ExistStart)
+      // Exclude CURRENT booking from conflict check
+      const conflict = await Booking.findOne({
+        _id: { $ne: booking._id },
+        propertyId: newPropertyId,
+        status: { $ne: 'Cancelled' },
+        $and: [
+          { startDate: { $lt: end } },
+          { endDate: { $gt: start } }
+        ]
+      });
+
+      if (conflict) {
+        return res.status(400).json({ message: 'Selected dates are not available for this property' });
+      }
+
+      // 2. Remove old dates from old property if it was Confirmed
+      if (booking.status === 'Confirmed' || isAdmin) {
+        const oldProperty = await Property.findById(oldPropertyId);
+        if (oldProperty) {
+          const oldStart = new Date(booking.startDate);
+          const oldEnd = new Date(booking.endDate);
+          const oldDatesToRemove = [];
+          
+          let tempDate = new Date(oldStart);
+          while (tempDate < oldEnd) {
+            oldDatesToRemove.push(new Date(tempDate).toISOString());
+            tempDate.setDate(tempDate.getDate() + 1);
+          }
+          
+          oldProperty.bookedDates = oldProperty.bookedDates.filter(date =>
+            !oldDatesToRemove.includes(new Date(date).toISOString())
+          );
+          await oldProperty.save();
         }
-        
-        oldProperty.bookedDates = oldProperty.bookedDates.filter(date =>
-          !oldDatesToRemove.includes(new Date(date).toISOString().split('T')[0])
-        );
-        await oldProperty.save();
       }
 
-      // Check availability on new property
-      const newProperty = await Property.findById(newPropertyId);
-      if (!newProperty) {
-        return res.status(404).json({ message: 'Property not found' });
-      }
-
-      const bookedDates = newProperty.bookedDates.map(date => new Date(date).toISOString().split('T')[0]);
-      const requestedDates = [];
-      
-      const tempStart = new Date(start);
-      while (tempStart < end) {
-        requestedDates.push(tempStart.toISOString().split('T')[0]);
-        tempStart.setDate(tempStart.getDate() + 1);
-      }
-
-      // Check if new dates are available (exclude current booking's dates if same property)
-      const isBooked = requestedDates.some(date => bookedDates.includes(date));
-      if (isBooked && oldPropertyId.toString() !== newPropertyId.toString()) {
-        return res.status(400).json({ message: 'Selected dates are not available' });
-      }
-
-      // Add new dates to new property if confirmed
-      if (status === 'Confirmed' || booking.status === 'Confirmed') {
-        newProperty.bookedDates.push(...requestedDates.map(date => new Date(date)));
-        await newProperty.save();
-      }
-
-      // Calculate new total amount
+      // 3. Update booking dates and amount
       const nights = Math.ceil((end - start) / (1000 * 60 * 60 * 24));
-      booking.totalAmount = nights * newProperty.price;
+      const newProperty = await Property.findById(newPropertyId);
+      if (!newProperty) return res.status(404).json({ message: 'Property not found' });
       
+      booking.totalAmount = (nights > 0 ? nights : 1) * newProperty.price;
       booking.startDate = start;
       booking.endDate = end;
+      booking.propertyId = newPropertyId;
+
+      // 4. Add new dates to property IF it remains active
+      if (booking.status !== 'Cancelled') {
+        const requestedDates = [];
+        let tempDate = new Date(start);
+        while (tempDate < end) {
+          requestedDates.push(new Date(tempDate));
+          tempDate.setDate(tempDate.getDate() + 1);
+        }
+        newProperty.bookedDates.push(...requestedDates);
+        await newProperty.save();
+      }
     }
 
     // Update other fields
-    if (guestName !== undefined) booking.guestName = guestName;
-    if (guestEmail !== undefined) booking.guestEmail = guestEmail;
+    if (guestName !== undefined && isAdmin) booking.guestName = guestName;
+    if (guestEmail !== undefined && isAdmin) booking.guestEmail = guestEmail;
     if (guestPhone !== undefined) booking.guestPhone = guestPhone;
     if (totalGuests !== undefined) booking.totalGuests = totalGuests;
-    if (status !== undefined) booking.status = status;
-    if (propertyId) booking.propertyId = propertyId;
 
     const updatedBooking = await booking.save();
+    await updatedBooking.populate('propertyId', 'title location images');
     
-    // Populate before returning
-    await updatedBooking.populate('propertyId', 'title location');
+    res.json(updatedBooking);
+  } catch (error) {
+    console.error('Update booking error:', error);
+    res.status(400).json({ message: error.message });
+  }
+};
+
+// @desc    Update booking payment status
+// @route   PUT /api/bookings/:id/payment
+// @access  Private/Admin
+const updatePaymentStatus = async (req, res) => {
+  try {
+    const { paymentStatus } = req.body;
+    
+    const booking = await Booking.findById(req.params.id);
+    if (!booking) {
+      return res.status(404).json({ message: 'Booking not found' });
+    }
+    
+    booking.paymentStatus = paymentStatus;
+    if (paymentStatus === 'Paid') {
+      booking.paidAt = new Date();
+    }
+    const updatedBooking = await booking.save();
     
     res.json(updatedBooking);
   } catch (error) {
@@ -310,5 +399,6 @@ module.exports = {
   getAllBookings,
   updateBookingStatus,
   cancelBooking,
-  updateBooking
+  updateBooking,
+  updatePaymentStatus
 };

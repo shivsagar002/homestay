@@ -1,6 +1,6 @@
 import axios from 'axios';
 
-const API_BASE_URL = import.meta.env.VITE_API_URL || 'http://localhost:5000/api';
+const API_BASE_URL = import.meta.env.VITE_API_URL || '/api';
 
 const api = axios.create({
   baseURL: API_BASE_URL,
@@ -33,6 +33,7 @@ export const authAPI = {
   register: (data) => api.post('/auth/register', data),
   login: (data) => api.post('/auth/login', data),
   getProfile: () => api.get('/auth/profile'),
+  toggleWishlist: (id) => api.post(`/auth/wishlist/${id}`),
 };
 
 // Booking API calls
@@ -43,6 +44,7 @@ export const bookingAPI = {
   updateStatus: (id, status) => api.put(`/bookings/${id}/status`, { status }),
   update: (id, data) => api.put(`/bookings/${id}`, data),
   cancel: (id) => api.put(`/bookings/${id}/cancel`),
+  updatePayment: (id, paymentStatus) => api.put(`/bookings/${id}/payment`, { paymentStatus }),
 };
 
 // Upload API calls

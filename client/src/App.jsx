@@ -5,6 +5,7 @@ import useAuthStore from './stores/authStore';
 import Navbar from './components/Navbar';
 import Footer from './components/Footer';
 import LandingPage from './pages/LandingPage';
+import MyBookings from './pages/MyBookings';
 import SearchResults from './pages/SearchResults';
 import PropertyDetail from './pages/PropertyDetail';
 import AdminLogin from './pages/AdminLogin';
@@ -23,6 +24,7 @@ function AppContent() {
         <Route path="/" element={<LandingPage />} />
         <Route path="/search" element={<SearchResults />} />
         <Route path="/property/:id" element={<PropertyDetail />} />
+        <Route path="/my-bookings" element={<MyBookings />} />
         <Route path="/admin" element={<AdminLogin />} />
         <Route path="/admin/dashboard" element={<AdminDashboard />} />
       </Routes>

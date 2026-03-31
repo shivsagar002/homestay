@@ -30,6 +30,8 @@ const AuthModal = () => {
       const result = await login(formData.email, formData.password);
       if (result.success) {
         setFormData({ name: '', email: '', password: '', confirmPassword: '' });
+      } else {
+        toast.error(result.error);
       }
     } else {
       if (formData.password !== formData.confirmPassword) {
@@ -39,6 +41,8 @@ const AuthModal = () => {
       const result = await signup(formData.name, formData.email, formData.password);
       if (result.success) {
         setFormData({ name: '', email: '', password: '', confirmPassword: '' });
+      } else {
+        toast.error(result.error);
       }
     }
   };

@@ -15,6 +15,10 @@ const useAuthStore = create((set, get) => ({
   isLoading: false,
   loginLoading: false,
   signupLoading: false,
+  wishlistLoading: false,
+  
+  // Wishlist
+  wishlist: [],
   
   // Actions
   setUser: (user) => set({ user, isAuthenticated: !!user }),
@@ -37,11 +41,11 @@ const useAuthStore = create((set, get) => ({
     set({ loginLoading: true });
     try {
       const response = await authAPI.login({ email, password });
-      const { _id, name, email: userEmail, role, token } = response.data;
+      const { _id, name, email: userEmail, role, wishlist, token } = response.data;
       
       const user = { id: _id, name, email: userEmail, role };
       
-      set({ user, isAuthenticated: true, token });
+      set({ user, isAuthenticated: true, token, wishlist: wishlist || [] });
       localStorage.setItem('token', token);
       set({ isAuthModalOpen: false });
       return { success: true };
@@ -59,15 +63,16 @@ const useAuthStore = create((set, get) => ({
     set({ signupLoading: true });
     try {
       const response = await authAPI.register({ name, email, password });
-      const { _id, userName, email: userEmail, role, token } = response.data;
+      const { _id, name: resName, email: userEmail, role, wishlist, token } = response.data;
       
-      const user = { id: _id, name: userName, email: userEmail, role };
+      const user = { id: _id, name: resName, email: userEmail, role };
       
-      set({ user, isAuthenticated: true, token });
+      set({ user, isAuthenticated: true, token, wishlist: wishlist || [] });
       localStorage.setItem('token', token);
       set({ isAuthModalOpen: false });
       return { success: true };
     } catch (error) {
+      console.error('Registration/Signup error:', error.response || error);
       return { 
         success: false, 
         error: error.response?.data?.message || 'Registration failed. Please try again.' 
@@ -94,9 +99,9 @@ const useAuthStore = create((set, get) => ({
       set({ token, isLoading: true });
       try {
         const response = await authAPI.getProfile();
-        const { _id, name, email, role } = response.data;
+        const { _id, name, email, role, wishlist } = response.data;
         const user = { id: _id, name, email, role };
-        set({ user, isAuthenticated: true, isLoading: false });
+        set({ user, isAuthenticated: true, isLoading: false, wishlist: wishlist || [] });
       } catch (error) {
         // Token is invalid, clear it
         localStorage.removeItem('token');
@@ -107,6 +112,25 @@ const useAuthStore = create((set, get) => ({
           isLoading: false 
         });
       }
+    }
+  },
+
+  // Toggle wishlist
+  toggleWishlist: async (propertyId) => {
+    if (!get().isAuthenticated) return { success: false, error: 'Please login first' };
+    
+    set({ wishlistLoading: true });
+    try {
+      const response = await authAPI.toggleWishlist(propertyId);
+      set({ wishlist: response.data.wishlist });
+      return { success: true, message: response.data.message };
+    } catch (error) {
+      return { 
+        success: false, 
+        error: error.response?.data?.message || 'Failed to update wishlist' 
+      };
+    } finally {
+      set({ wishlistLoading: false });
     }
   }
 }));

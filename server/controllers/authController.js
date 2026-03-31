@@ -14,10 +14,12 @@ const generateToken = (id) => {
 const registerUser = async (req, res) => {
   try {
     const { name, email, password, role } = req.body;
-
+    console.log('Registration request body:', req.body);
+    
     // Check if user exists
     const userExists = await User.findOne({ email });
     if (userExists) {
+      console.log('User already exists:', email);
       return res.status(400).json({ message: 'User already exists' });
     }
 
@@ -35,13 +37,21 @@ const registerUser = async (req, res) => {
         name: user.name,
         email: user.email,
         role: user.role,
+        wishlist: user.wishlist || [],
         token: generateToken(user._id),
       });
     } else {
       res.status(400).json({ message: 'Invalid user data' });
     }
   } catch (error) {
-    res.status(400).json({ message: error.message });
+    console.error('Registration Error Details:', error);
+    
+    // Handle Mongoose duplicate key error
+    if (error.code === 11000) {
+      return res.status(400).json({ message: 'Email already exists. Please use a different email.' });
+    }
+    
+    res.status(400).json({ message: error.message || 'Registration failed' });
   }
 };
 
@@ -61,6 +71,7 @@ const loginUser = async (req, res) => {
         name: user.name,
         email: user.email,
         role: user.role,
+        wishlist: user.wishlist || [],
         token: generateToken(user._id),
       });
     } else {
@@ -84,6 +95,7 @@ const getUserProfile = async (req, res) => {
         name: user.name,
         email: user.email,
         role: user.role,
+        wishlist: user.wishlist || [],
       });
     } else {
       res.status(404).json({ message: 'User not found' });
@@ -125,6 +137,7 @@ const createAdmin = async (req, res) => {
         name: user.name,
         email: user.email,
         role: user.role,
+        wishlist: user.wishlist || [],
         token: generateToken(user._id),
       });
     } else {
@@ -135,10 +148,42 @@ const createAdmin = async (req, res) => {
   }
 };
 
+// @desc    Toggle property in wishlist
+// @route   POST /api/auth/wishlist/:id
+// @access  Private
+const toggleWishlist = async (req, res) => {
+  try {
+    const user = await User.findById(req.user._id);
+    const propertyId = req.params.id;
+
+    if (!user) {
+      return res.status(404).json({ message: 'User not found' });
+    }
+
+    const index = user.wishlist.indexOf(propertyId);
+    if (index === -1) {
+      // Add to wishlist
+      user.wishlist.push(propertyId);
+    } else {
+      // Remove from wishlist
+      user.wishlist.splice(index, 1);
+    }
+
+    await user.save();
+    res.json({ 
+      message: index === -1 ? 'Added to wishlist' : 'Removed from wishlist',
+      wishlist: user.wishlist 
+    });
+  } catch (error) {
+    res.status(400).json({ message: error.message });
+  }
+};
+
 module.exports = {
   registerUser,
   loginUser,
   getUserProfile,
   generateToken,
-  createAdmin
+  createAdmin,
+  toggleWishlist
 };
