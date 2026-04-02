@@ -173,8 +173,8 @@ const AdminDashboard = () => {
     if (!file) return;
 
     try {
-      const response = await uploadAPI.upload(file);
-      const imageUrl = response.data.url;
+      const response = await uploadAPI.uploadSingle(file);
+      const imageUrl = response.data.image.url;
       if (isEdit) {
         setEditingProperty(prev => ({ ...prev, ownerImage: imageUrl }));
       } else {
@@ -182,6 +182,7 @@ const AdminDashboard = () => {
       }
       toast.success('Owner image uploaded');
     } catch (err) {
+      console.error(err);
       toast.error('Failed to upload owner image');
     }
   };
@@ -1011,7 +1012,7 @@ const AdminDashboard = () => {
       {/* New Booking Modal */}
       {showNewBooking && (
         <div className="fixed inset-0 bg-black/50 flex items-center justify-center p-4 z-50 overflow-y-auto">
-          <div className="bg-white rounded-xl w-full max-w-lg p-4 md:p-6 my-8">
+          <div className="bg-white rounded-xl w-full max-w-lg p-4 md:p-6 my-8 max-h-[90vh] overflow-y-auto">
             <div className="flex justify-between items-center mb-4">
               <h3 className="text-lg font-bold">Create Booking for Guest</h3>
               <button onClick={() => setShowNewBooking(false)}><XMarkIcon className="h-6 w-6" /></button>
@@ -1064,18 +1065,7 @@ const AdminDashboard = () => {
                         return selectedProp.bookedDates?.some(d => new Date(d).toDateString() === date.toDateString());
                       }
                     }}
-                    modifiersStyles={{
-                      booked: {
-                        backgroundColor: '#fff1f2',
-                        color: '#f43f5e',
-                        textDecoration: 'line-through',
-                        textDecorationThickness: '2px',
-                        opacity: 1,
-                        cursor: 'not-allowed',
-                        fontWeight: 'bold',
-                        border: '1px solid #fecdd3'
-                      }
-                    }}
+                    modifiersClassNames={{ booked: 'booked-date-crossed' }}
                     className="mx-auto"
                   />
                 </div>
@@ -1102,17 +1092,23 @@ const AdminDashboard = () => {
       {/* View Booking Modal */}
       {viewingBooking && (
         <div className="fixed inset-0 bg-black/50 flex items-center justify-center p-4 z-50 overflow-y-auto">
-          <div className="bg-white rounded-xl w-full max-w-lg p-4 md:p-6 my-8">
+          <div className="bg-white rounded-xl w-full max-w-lg p-4 md:p-6 my-8 max-h-[90vh] overflow-y-auto">
             <div className="flex justify-between items-center mb-4">
               <h3 className="text-lg font-bold">Booking Details</h3>
               <button onClick={() => setViewingBooking(null)}><XMarkIcon className="h-6 w-6" /></button>
             </div>
             
+            {viewingBooking.propertyId?.images?.[0] && (
+              <div className="w-full h-40 md:h-48 mb-6 rounded-xl overflow-hidden shadow-sm">
+                <img src={viewingBooking.propertyId.images[0]} className="w-full h-full object-cover" alt="Property" />
+              </div>
+            )}
+            
             <div className="space-y-4">
-              <div className="grid grid-cols-2 gap-4">
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                 <div className="bg-gray-50 rounded-lg p-4">
                   <h4 className="font-medium text-xs text-gray-500 mb-1 uppercase tracking-wider">Property</h4>
-                  <p className="font-bold text-gray-900">{viewingBooking.propertyId?.title || 'N/A'}</p>
+                  <p className="font-bold text-gray-900 truncate">{viewingBooking.propertyId?.title || 'N/A'}</p>
                 </div>
                 <div className="bg-gray-50 rounded-lg p-4">
                   <h4 className="font-medium text-xs text-gray-500 mb-1 uppercase tracking-wider">Guest Name</h4>

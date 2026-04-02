@@ -56,6 +56,12 @@ const Navbar = () => {
                 >
                   My Bookings
                 </Link>
+                <Link 
+                  to="/wishlist" 
+                  className="text-gray-600 hover:text-primary-600 font-medium transition-colors text-sm"
+                >
+                  Wishlist
+                </Link>
                 <div className="h-4 w-px bg-gray-200"></div>
                 <span className="text-gray-700 text-sm font-medium">Welcome, {user?.name?.split(' ')[0]}</span>
                 <button
@@ -113,6 +119,13 @@ const Navbar = () => {
                 <div className="text-gray-900 font-bold text-sm py-2 border-b border-gray-100 mb-2">
                   Welcome, {user?.name}
                 </div>
+                <Link
+                  to="/wishlist"
+                  onClick={() => setMobileMenuOpen(false)}
+                  className="block text-gray-600 hover:text-primary-600 font-medium py-2 text-sm"
+                >
+                  Wishlist
+                </Link>
                 <Link
                   to="/my-bookings"
                   onClick={() => setMobileMenuOpen(false)}

@@ -1,12 +1,16 @@
 import { useState, useEffect } from 'react';
 import { motion } from 'framer-motion';
-import { WifiIcon, TvIcon, HomeIcon, TruckIcon, FunnelIcon, XMarkIcon } from '@heroicons/react/24/outline';
+import { WifiIcon, TvIcon, HomeIcon, TruckIcon, FunnelIcon, XMarkIcon, HeartIcon } from '@heroicons/react/24/outline';
+import { HeartIcon as HeartIconSolid } from '@heroicons/react/24/solid';
 import { Link } from 'react-router-dom';
 import useSearchStore from '../stores/searchStore';
+import useAuthStore from '../stores/authStore';
 import { propertyAPI } from '../utils/api';
+import toast from 'react-hot-toast';
 
 const SearchResults = () => {
   const { location, startDate, endDate, guests } = useSearchStore();
+  const { wishlist, toggleWishlist, isAuthenticated, setIsAuthModalOpen } = useAuthStore();
   const [properties, setProperties] = useState([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
@@ -61,9 +65,21 @@ const SearchResults = () => {
   };
 
   const clearFilters = () => {
-    setPriceInputs({ minPrice: '', maxPrice: '' });
-    setSelectedAmenities([]);
     setAppliedFilters({ minPrice: '', maxPrice: '', amenities: [] });
+  };
+  
+  const handleToggleWishlist = async (propertyId) => {
+    if (!isAuthenticated) {
+      toast.error('Please login to save properties');
+      setIsAuthModalOpen(true);
+      return;
+    }
+    const result = await toggleWishlist(propertyId);
+    if (result.success) {
+      toast.success(result.message);
+    } else {
+      toast.error(result.error);
+    }
   };
 
   const hasActiveFilters = appliedFilters.minPrice || appliedFilters.maxPrice || appliedFilters.amenities.length > 0;
@@ -189,71 +205,79 @@ const SearchResults = () => {
         <div className="flex flex-col lg:flex-row gap-6">
           {/* Filters Sidebar */}
           <div className={`lg:w-1/4 ${showFilters ? 'block' : 'hidden md:block'}`}>
-            <div className="bg-white rounded-xl shadow-lg p-4 md:p-6 sticky top-20 border">
-              <h3 className="text-base font-semibold mb-4">Filters</h3>
-              
-              <div className="mb-4">
-                <h4 className="font-medium text-sm mb-2">Price Range (per night)</h4>
-                <div className="grid grid-cols-2 gap-2">
-                  <input
-                    type="text"
-                    value={priceInputs.minPrice}
-                    onChange={(e) => setPriceInputs({...priceInputs, minPrice: e.target.value.replace(/[^0-9]/g, '')})}
-                    className="px-3 py-2 border rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-primary-500"
-                    placeholder="Min ₹"
-                  />
-                  <input
-                    type="text"
-                    value={priceInputs.maxPrice}
-                    onChange={(e) => setPriceInputs({...priceInputs, maxPrice: e.target.value.replace(/[^0-9]/g, '')})}
-                    className="px-3 py-2 border rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-primary-500"
-                    placeholder="Max ₹"
-                  />
+              <div className="bg-white rounded-3xl shadow-xl p-8 sticky top-24 border border-gray-100 shadow-gray-200/50">
+                <div className="flex items-center gap-2 mb-6">
+                  <FunnelIcon className="h-5 w-5 text-primary-600" />
+                  <h3 className="text-xl font-black text-gray-900">Filters</h3>
+                </div>
+                
+                <div className="mb-8">
+                  <h4 className="font-bold text-gray-900 text-sm mb-4 uppercase tracking-widest">Price Range</h4>
+                  <div className="grid grid-cols-2 gap-3">
+                    <div className="relative">
+                      <span className="absolute left-3 top-2.5 text-gray-400 text-sm">₹</span>
+                      <input
+                        type="text"
+                        value={priceInputs.minPrice}
+                        onChange={(e) => setPriceInputs({...priceInputs, minPrice: e.target.value.replace(/[^0-9]/g, '')})}
+                        className="w-full pl-7 pr-3 py-2.5 bg-gray-50 border-transparent focus:bg-white focus:ring-2 focus:ring-primary-500 rounded-xl text-sm transition-all border"
+                        placeholder="Min"
+                      />
+                    </div>
+                    <div className="relative">
+                      <span className="absolute left-3 top-2.5 text-gray-400 text-sm">₹</span>
+                      <input
+                        type="text"
+                        value={priceInputs.maxPrice}
+                        onChange={(e) => setPriceInputs({...priceInputs, maxPrice: e.target.value.replace(/[^0-9]/g, '')})}
+                        className="w-full pl-7 pr-3 py-2.5 bg-gray-50 border-transparent focus:bg-white focus:ring-2 focus:ring-primary-500 rounded-xl text-sm transition-all border"
+                        placeholder="Max"
+                      />
+                    </div>
+                  </div>
+                </div>
+
+                <div className="mb-8">
+                  <h4 className="font-bold text-gray-900 text-sm mb-4 uppercase tracking-widest">Amenities</h4>
+                  <div className="flex flex-wrap gap-2">
+                    {allAmenities.map(amenity => (
+                      <button
+                        key={amenity}
+                        type="button"
+                        onClick={() => {
+                          setSelectedAmenities(prev =>
+                            prev.includes(amenity)
+                              ? prev.filter(a => a !== amenity)
+                              : [...prev, amenity]
+                          );
+                        }}
+                        className={`px-4 py-2 text-xs font-bold rounded-xl border-2 transition-all ${
+                          selectedAmenities.includes(amenity)
+                            ? 'bg-primary-600 text-white border-primary-600 shadow-md shadow-primary-200 scale-[1.02]'
+                            : 'bg-white text-gray-600 border-gray-100 hover:border-primary-200 hover:bg-gray-50'
+                        }`}
+                      >
+                        {amenity}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+
+                <div className="flex gap-3 pt-6 border-t border-gray-50">
+                  <button
+                    onClick={clearFilters}
+                    className="flex-1 px-4 py-3 bg-gray-50 text-gray-600 rounded-xl text-sm font-black hover:bg-gray-100 transition-all border border-gray-100"
+                  >
+                    Reset
+                  </button>
+                  <button
+                    onClick={applyFilters}
+                    className="flex-1 px-4 py-3 bg-gray-900 text-white rounded-xl text-sm font-black hover:bg-gray-800 transition-all shadow-lg shadow-gray-200"
+                  >
+                    Apply
+                  </button>
                 </div>
               </div>
-
-              <div className="mb-4">
-                <h4 className="font-medium text-sm mb-2">Amenities</h4>
-                <div className="flex flex-wrap gap-2">
-                  {allAmenities.map(amenity => (
-                    <button
-                      key={amenity}
-                      type="button"
-                      onClick={() => {
-                        setSelectedAmenities(prev =>
-                          prev.includes(amenity)
-                            ? prev.filter(a => a !== amenity)
-                            : [...prev, amenity]
-                        );
-                      }}
-                      className={`px-3 py-1.5 text-xs rounded-full border transition-colors ${
-                        selectedAmenities.includes(amenity)
-                          ? 'bg-primary-500 text-white border-primary-500'
-                          : 'bg-white text-gray-600 border-gray-300 hover:border-primary-300'
-                      }`}
-                    >
-                      {amenity}
-                    </button>
-                  ))}
-                </div>
-              </div>
-
-              {/* Apply and Clear Buttons */}
-              <div className="flex gap-2 pt-2 border-t">
-                <button
-                  onClick={clearFilters}
-                  className="flex-1 px-4 py-2 border border-gray-300 rounded-lg text-sm font-medium text-gray-700 hover:bg-gray-50 transition-colors"
-                >
-                  Clear
-                </button>
-                <button
-                  onClick={applyFilters}
-                  className="flex-1 btn-primary text-sm"
-                >
-                  Apply Filters
-                </button>
-              </div>
-            </div>
           </div>
 
           {/* Properties Grid */}
@@ -286,6 +310,26 @@ const SearchResults = () => {
                     >
                       <Link to={isAvailable ? `/property/${property._id}` : '#'}>
                         <div className="relative">
+                          <div className="absolute top-3 left-3 z-10">
+                            <button
+                              onClick={(e) => {
+                                e.preventDefault();
+                                e.stopPropagation();
+                                handleToggleWishlist(property._id);
+                              }}
+                              className={`p-2 rounded-full backdrop-blur-md transition-all ${
+                                wishlist.includes(property._id)
+                                  ? 'bg-rose-500 text-white shadow-lg shadow-rose-200 scale-110'
+                                  : 'bg-white/80 text-gray-600 hover:bg-white hover:text-rose-500 shadow-sm'
+                              }`}
+                            >
+                              {wishlist.includes(property._id) ? (
+                                <HeartIconSolid className="h-5 w-5" />
+                              ) : (
+                                <HeartIcon className="h-5 w-5" />
+                              )}
+                            </button>
+                          </div>
                           <img
                             src={property.images?.[0] || 'https://images.unsplash.com/photo-1564013799919-ab600027ffc6?w=800'}
                             alt={property.title}

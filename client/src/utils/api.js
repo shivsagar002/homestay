@@ -34,6 +34,7 @@ export const authAPI = {
   login: (data) => api.post('/auth/login', data),
   getProfile: () => api.get('/auth/profile'),
   toggleWishlist: (id) => api.post(`/auth/wishlist/${id}`),
+  getWishlist: () => api.get('/auth/wishlist'),
 };
 
 // Booking API calls

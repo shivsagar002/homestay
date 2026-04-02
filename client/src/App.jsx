@@ -1,4 +1,4 @@
-import { HashRouter as Router, Routes, Route, useLocation } from 'react-router-dom';
+import { BrowserRouter as Router, Routes, Route, useLocation } from 'react-router-dom';
 import { useEffect } from 'react';
 import { Toaster } from 'react-hot-toast';
 import useAuthStore from './stores/authStore';
@@ -8,6 +8,7 @@ import LandingPage from './pages/LandingPage';
 import MyBookings from './pages/MyBookings';
 import SearchResults from './pages/SearchResults';
 import PropertyDetail from './pages/PropertyDetail';
+import WishlistPage from './pages/WishlistPage';
 import AdminLogin from './pages/AdminLogin';
 import AdminDashboard from './pages/AdminDashboard';
 import AuthModal from './components/AuthModal';
@@ -25,6 +26,7 @@ function AppContent() {
         <Route path="/search" element={<SearchResults />} />
         <Route path="/property/:id" element={<PropertyDetail />} />
         <Route path="/my-bookings" element={<MyBookings />} />
+        <Route path="/wishlist" element={<WishlistPage />} />
         <Route path="/admin" element={<AdminLogin />} />
         <Route path="/admin/dashboard" element={<AdminDashboard />} />
       </Routes>

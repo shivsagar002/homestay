@@ -98,7 +98,14 @@ const createBooking = async (req, res) => {
 const getUserBookings = async (req, res) => {
   try {
     const bookings = await Booking.find({ userId: req.user._id })
-      .populate('propertyId', 'title location images')
+      .populate({
+        path: 'propertyId',
+        select: 'title location images ownerName ownerContact ownerWhatsApp ownerEmail ownerImage owner',
+        populate: {
+          path: 'owner',
+          select: 'name email phone'
+        }
+      })
       .sort({ createdAt: -1 });
     
     res.json(bookings);
@@ -114,7 +121,14 @@ const getAllBookings = async (req, res) => {
   try {
     const bookings = await Booking.find()
       .populate('userId', 'name email')
-      .populate('propertyId', 'title location')
+      .populate({
+        path: 'propertyId',
+        select: 'title location images ownerName ownerContact ownerWhatsApp ownerEmail ownerImage owner',
+        populate: {
+          path: 'owner',
+          select: 'name email phone'
+        }
+      })
       .sort({ createdAt: -1 });
     
     res.json(bookings);

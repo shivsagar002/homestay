@@ -132,6 +132,22 @@ const useAuthStore = create((set, get) => ({
     } finally {
       set({ wishlistLoading: false });
     }
+  },
+
+  // Fetch populated wishlist properties
+  fetchWishlist: async () => {
+    if (!get().isAuthenticated) return [];
+    
+    set({ isLoading: true });
+    try {
+      const response = await authAPI.getWishlist();
+      return response.data || [];
+    } catch (error) {
+      console.error('Failed to fetch populated wishlist:', error);
+      return [];
+    } finally {
+      set({ isLoading: false });
+    }
   }
 }));
 

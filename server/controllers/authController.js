@@ -179,11 +179,29 @@ const toggleWishlist = async (req, res) => {
   }
 };
 
+// @desc    Get user wishlist properties (populated)
+// @route   GET /api/auth/wishlist
+// @access  Private
+const getWishlist = async (req, res) => {
+  try {
+    const user = await User.findById(req.user._id).populate('wishlist');
+    
+    if (!user) {
+      return res.status(404).json({ message: 'User not found' });
+    }
+
+    res.json(user.wishlist);
+  } catch (error) {
+    res.status(400).json({ message: error.message });
+  }
+};
+
 module.exports = {
   registerUser,
   loginUser,
   getUserProfile,
   generateToken,
   createAdmin,
-  toggleWishlist
+  toggleWishlist,
+  getWishlist
 };
